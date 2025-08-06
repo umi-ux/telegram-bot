@@ -152,7 +152,9 @@ async def cancel_handler(message: types.Message, state: FSMContext):
 @app.route(WEBHOOK_PATH, methods=['POST'])
 def webhook():
     update = types.Update(**request.json)
-    asyncio.create_task(dp.process_update(update))
+    # Run async handler in the existing loop
+    from asyncio import run
+    run(dp.process_update(update))
     return 'ok', 200
 
 # === WEBHOOK SETUP ===
