@@ -6,12 +6,12 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.utils.executor import start_webhook
 
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 from dotenv import load_dotenv
+from threading import Thread
 
 # === LOAD ENV ===
 load_dotenv()
@@ -150,28 +150,31 @@ async def cancel_handler(message: types.Message, state: FSMContext):
 
 # === FLASK ROUTE TO RECEIVE UPDATES ===
 @app.route(WEBHOOK_PATH, methods=['POST'])
-async def webhook():
+def webhook():
     update = types.Update(**request.json)
-    await dp.process_update(update)
+    asyncio.create_task(dp.process_update(update))
     return 'ok', 200
 
-# === SETUP WEBHOOK ON START ===
+# === WEBHOOK SETUP ===
 async def on_startup(dp):
     await bot.set_webhook(WEBHOOK_URL)
 
 async def on_shutdown(dp):
     await bot.delete_webhook()
 
-# === RUN WEBHOOK SERVER ===
+# === MAIN ===
 if __name__ == '__main__':
+    import asyncio
+
     logging.basicConfig(level=logging.INFO)
-    start_webhook(
-        dispatcher=dp,
-        webhook_path=WEBHOOK_PATH,
-        on_startup=on_startup,
-        on_shutdown=on_shutdown,
-        skip_updates=True,
-        host=APP_HOST,
-        port=APP_PORT,
-        web_app=app
-    )
+
+    # Start Flask in a separate thread
+    def run_flask():
+        app.run(host=APP_HOST, port=APP_PORT)
+
+    flask_thread = Thread(target=run_flask)
+    flask_thread.start()
+
+    # Start webhook setup
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(on_startup(dp))
