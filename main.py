@@ -221,3 +221,6 @@ async def unknown_text(message: types.Message, state: FSMContext):
 # === START POLLING ===
 def start_bot():
     executor.start_polling(dp, skip_updates=True)
+
+if __name__ == '__main__':
+    start_bot()
