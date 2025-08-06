@@ -48,7 +48,8 @@ report_keyboard = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton("
 
 # === HANDLERS ===
 @dp.message_handler(commands='start')
-async def start(message: types.Message):
+async def start(message: types.Message, state: FSMContext):
+    await state.finish()  # Cancel any ongoing form/report
     await message.answer("Hi! Use /report to file a near miss report.\n\nHi! Tekan /report untuk membuat laporan.", reply_markup=report_keyboard)
 
 @dp.message_handler(commands='report')
@@ -132,11 +133,15 @@ async def save_data(message: types.Message, state: FSMContext, photo_url):
     await message.answer("✅ Report saved. Tap /report to send another.\n\nLaporan disimpan. Tekan /report untuk menghantar lagi.", reply_markup=report_keyboard)
     await state.finish()
 
-@dp.message_handler(commands='cancel', state='*')
+# === CANCEL HANDLER ===
+@dp.message_handler(commands='cancel')
 async def cancel_handler(message: types.Message, state: FSMContext):
-    if await state.get_state():
-        await state.finish()
-        await message.answer("❌ Report cancelled.\n\n❌ Laporan dibatalkan", reply_markup=ReplyKeyboardRemove())
+    current = await state.get_state()
+    if current is None:
+        await message.answer("❌ No active report to cancel.\n\nTiada laporan sedang dibuat.", reply_markup=report_keyboard)
+        return
+    await state.finish()
+    await message.answer("❌ Report cancelled.\n\n❌ Laporan dibatalkan.", reply_markup=report_keyboard)
 
 # === AIOHTTP WEBHOOK ===
 async def handle_webhook(request):
