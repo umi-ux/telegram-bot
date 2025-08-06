@@ -53,6 +53,19 @@ async def start(message: types.Message, state: FSMContext):
     await state.finish()  # Cancel any ongoing form/report
     await message.answer("Hi! Use /report to file a near miss report.\n\nHi! Tekan /report untuk membuat laporan.", reply_markup=report_keyboard)
 
+# === CANCEL HANDLER ===
+@dp.message_handler(commands='cancel', state='*')
+async def cancel_handler(message: types.Message, state: FSMContext):
+    current = await state.get_state()
+    if current:
+        await state.finish()
+        await message.answer(
+            "❌ Report cancelled. Hit /report to start again.\n\n❌ Laporan dibatalkan. Tekan /report untuk mulakan laporan.",
+            reply_markup=ReplyKeyboardRemove())
+    else:
+        await message.answer("⚠️ No active report to cancel.",
+                             reply_markup=ReplyKeyboardRemove())
+
 # === Report Start ===
 @dp.message_handler(commands='report')
 async def report(message: types.Message):
@@ -142,19 +155,6 @@ async def save_data(message: types.Message, state: FSMContext, photo_url):
     ])
     await message.answer("✅ Report saved. Tap /report to send another.\n\n✅Laporan disimpan. Tekan /report untuk menghantar lagi.", reply_markup=report_keyboard)
     await state.finish()
-
-# === CANCEL HANDLER ===
-@dp.message_handler(commands='cancel', state='*')
-async def cancel_handler(message: types.Message, state: FSMContext):
-    current = await state.get_state()
-    if current:
-        await state.finish()
-        await message.answer(
-            "❌ Report cancelled. Hit /report to start again.\n\nLaporan dibatalkan. Tekan /report untuk mulakan laporan.",
-            reply_markup=ReplyKeyboardRemove())
-    else:
-        await message.answer("⚠️ No active report to cancel.",
-                             reply_markup=ReplyKeyboardRemove())
 
 # === AIOHTTP WEBHOOK ===
 async def handle_webhook(request):
