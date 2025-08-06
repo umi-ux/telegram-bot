@@ -5,36 +5,36 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton, ContentType, CallbackQuery
 from aiogram.utils.executor import start_webhook
-
+from aiohttp import web
+from datetime import datetime
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-from datetime import datetime
 from dotenv import load_dotenv
 
-# Load environment variables
+# === LOAD ENV ===
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+WEBHOOK_HOST = os.getenv("WEBHOOK_URL")  # without /webhook
+WEBHOOK_PATH = "/webhook"
+WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
-# Gspread setup
+APP_HOST = "0.0.0.0"
+APP_PORT = int(os.getenv("PORT", 8080))
+
+# === GOOGLE SHEETS ===
 SCOPE = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-creds_dict = json.loads(os.getenv("GOOGLE_CREDS_JSON"))
-CREDS = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
+CREDS = ServiceAccountCredentials.from_json_keyfile_dict(json.loads(os.getenv("GOOGLE_CREDS_JSON")), SCOPE)
 gc = gspread.authorize(CREDS)
 sheet = gc.open('Near Miss Reports').worksheet('Reports')
 
-# Bot and dispatcher
+# === BOT SETUP ===
 bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
-# Webhook config
-WEBHOOK_PATH = '/webhook'
-WEBAPP_HOST = '0.0.0.0'
-WEBAPP_PORT = int(os.environ.get('PORT', 10000))
-
-# States
+# === FSM STATES ===
 class Form(StatesGroup):
     name = State()
     location = State()
@@ -43,12 +43,11 @@ class Form(StatesGroup):
     description = State()
     photo = State()
 
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton, ContentType, CallbackQuery
-
+# === KEYBOARDS ===
 cancel_keyboard = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton("/cancel"))
 report_keyboard = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton("/report"))
 
-# Handlers
+# === HANDLERS ===
 @dp.message_handler(commands='start')
 async def start(message: types.Message):
     await message.answer("Hi! Use /report to file a near miss report.", reply_markup=report_keyboard)
@@ -140,15 +139,24 @@ async def cancel_handler(message: types.Message, state: FSMContext):
         await state.finish()
         await message.answer("❌ Report cancelled.", reply_markup=ReplyKeyboardRemove())
 
-# Webhook startup/shutdown
+# === AIOHTTP WEBHOOK ===
+async def handle_webhook(request):
+    data = await request.json()
+    update = types.Update.to_object(data)
+    await dp.process_update(update)
+    return web.Response()
+
 async def on_startup(dp):
     await bot.set_webhook(WEBHOOK_URL)
 
 async def on_shutdown(dp):
     await bot.delete_webhook()
 
-# Main run
-if __name__ == '__main__':
+# === MAIN ===
+def main():
+    app = web.Application()
+    app.router.add_post(WEBHOOK_PATH, handle_webhook)
+
     logging.basicConfig(level=logging.INFO)
     start_webhook(
         dispatcher=dp,
@@ -156,6 +164,10 @@ if __name__ == '__main__':
         on_startup=on_startup,
         on_shutdown=on_shutdown,
         skip_updates=True,
-        host=WEBAPP_HOST,
-        port=WEBAPP_PORT,
+        host=APP_HOST,
+        port=APP_PORT,
+        web_app=app
     )
+
+if __name__ == '__main__':
+    main()
