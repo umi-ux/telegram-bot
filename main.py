@@ -130,7 +130,7 @@ async def save_data(message: types.Message, state: FSMContext, photo_url):
         photo_url,
         message.from_user.id
     ])
-    await message.answer("✅ Report saved. Tap /report to send another.\n\nLaporan disimpan. Tekan /report untuk menghantar lagi.", reply_markup=report_keyboard)
+    await message.answer("✅ Report saved. Tap /report to send another.\n\n✅Laporan disimpan. Tekan /report untuk menghantar lagi.", reply_markup=report_keyboard)
     await state.finish()
 
 # === CANCEL HANDLER ===
@@ -140,7 +140,7 @@ async def cancel_handler(message: types.Message, state: FSMContext):
     if current:
         await state.finish()
         await message.answer(
-            "❌ Report cancelled. You can start again anytime with /report.❌ \n\nLaporan dibatalkan. Anda boleh mulakan laporan lagi menggunakan /report.",
+            "❌ Report cancelled. You can start again anytime with /report.\n\n❌Laporan dibatalkan. Anda boleh mulakan laporan lagi menggunakan /report.",
             reply_markup=ReplyKeyboardRemove())
     else:
         await message.answer("⚠️ No active report to cancel.",
