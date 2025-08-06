@@ -1,42 +1,45 @@
 import logging
+import os
+import json
+from flask import Flask, request
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ContentType, CallbackQuery
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.utils import executor
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from aiogram.utils.executor import start_webhook
 
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
+from dotenv import load_dotenv
 
-# === CONFIGURATION ===
-API_TOKEN = '8433221482:AAExhTkTldSA99kE4Cu9tZJADoSGMEHBgEw'  # ← Replace with your real bot token
+# === LOAD ENV ===
+load_dotenv()
 
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+
+# === GSPREAD SETUP ===
 SCOPE = [
     'https://spreadsheets.google.com/feeds',
     'https://www.googleapis.com/auth/drive'
 ]
-import os
-import json
-
-creds_json = os.environ.get("GOOGLE_CREDS_JSON")
+creds_json = os.getenv("GOOGLE_CREDS_JSON")
 creds_dict = json.loads(creds_json)
-
-# 👇 THIS FIXES the private key formatting
-creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-
 CREDS = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
 gc = gspread.authorize(CREDS)
 sheet = gc.open('Near Miss Reports').worksheet('Reports')
 
+# === BOT & WEBHOOK SETUP ===
+bot = Bot(token=BOT_TOKEN)
+storage = MemoryStorage()
+dp = Dispatcher(bot, storage=storage)
 
-# === BOT SETUP ===
-logging.basicConfig(level=logging.INFO)
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher(bot, storage=MemoryStorage())
+WEBHOOK_PATH = '/webhook'
+APP_HOST = '0.0.0.0'
+APP_PORT = int(os.environ.get('PORT', 10000))
 
+app = Flask(__name__)
 
 # === STATE MACHINE ===
 class Form(StatesGroup):
@@ -47,190 +50,128 @@ class Form(StatesGroup):
     description = State()
     photo = State()
 
-
 # === KEYBOARDS ===
-cancel_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
-cancel_keyboard.add(KeyboardButton("/cancel"))
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton, ContentType, CallbackQuery
 
-report_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
-report_keyboard.add(KeyboardButton("/report"))
+cancel_keyboard = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton("/cancel"))
+report_keyboard = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton("/report"))
 
-
-# === CANCEL HANDLER ===
-@dp.message_handler(commands='cancel', state='*')
-async def cancel_handler(message: types.Message, state: FSMContext):
-    current = await state.get_state()
-    if current:
-        await state.finish()
-        await message.answer(
-            "❌ Report cancelled. You can start again anytime with /report.",
-            reply_markup=ReplyKeyboardRemove())
-    else:
-        await message.answer("⚠️ No active report to cancel.",
-                             reply_markup=ReplyKeyboardRemove())
-
-
-# === START ===
+# === HANDLERS ===
 @dp.message_handler(commands='start')
 async def start(message: types.Message):
-    await message.answer("Hi! Use /report to file a near miss report.",
-                         reply_markup=report_keyboard)
+    await message.answer("Hi! Use /report to file a near miss report.", reply_markup=report_keyboard)
 
-
-# === REPORT START ===
 @dp.message_handler(commands='report')
 async def report(message: types.Message):
     await Form.name.set()
-    await message.answer(
-        "What is your name?\n(You can cancel anytime with /cancel)\n\nNama anda?\n(Anda boleh batalkan bila-bila masa dengan /cancel)",
-        reply_markup=cancel_keyboard)
+    await message.answer("What is your name?\n(You can cancel anytime with /cancel)", reply_markup=cancel_keyboard)
 
-
-# === NAME ===
 @dp.message_handler(state=Form.name)
 async def process_name(message: types.Message, state: FSMContext):
     await state.update_data(name=message.text)
-
     keyboard = InlineKeyboardMarkup(row_width=2)
     for loc in ["Simpang Renggam", "U1 Office"]:
         keyboard.insert(InlineKeyboardButton(loc, callback_data=f"loc_{loc}"))
     await Form.location.set()
-    await message.answer(
-        "Select the incident location:\n\nPilih lokasi insiden:",
-        reply_markup=keyboard)
+    await message.answer("Select the incident location:", reply_markup=keyboard)
 
-
-# === LOCATION ===
-@dp.callback_query_handler(lambda c: c.data.startswith("loc_"),
-                           state=Form.location)
+@dp.callback_query_handler(lambda c: c.data.startswith("loc_"), state=Form.location)
 async def process_location(callback: CallbackQuery, state: FSMContext):
     location = callback.data.split("_", 1)[1]
     await state.update_data(location=location)
     await callback.answer()
-
     area_options = {
-        "Simpang Renggam": [
-            "Guard House", "Factory Surrounding", "Car/Motorcycle Parking",
-            "Office", "Toilet", "Prayer Room", "Canteen",
-            "Warehouse (Material)", "Warehouse (Component)", "Cutting Section",
-            "Blasting Section", "Deck Assembly", "Lip Assembly",
-            "Frame Assembly", "Crane Fabrication", "Painting Section",
-            "DL Assembly", "Laser Cleaning", "Loading Bay"
-        ],
-        "U1 Office": [
-            "Guard House", "Building Surrounding", "Car/Motorcycle Parking",
-            "Office 1st Floor", "Office 2nd Floor", "Toilet", "Prayer Room",
-            "Pantry", "Warehouse (MHE)", "Warehouse (T&I)", "Training Room",
-            "Ground Floor Office", "Stairs", "Meeting Room", "Discussion Room",
-            "Privacy Room", "L2 Lobby"
-        ]
+        "Simpang Renggam": ["Guard House", "Factory", "Office"],
+        "U1 Office": ["Office 1st Floor", "Office 2nd Floor", "Pantry"]
     }
-    areas = area_options.get(location, ["General Area"])
-
     keyboard = InlineKeyboardMarkup(row_width=2)
-    for area in areas:
-        keyboard.insert(
-            InlineKeyboardButton(area, callback_data=f"area_{area}"))
-
+    for area in area_options.get(location, ["General Area"]):
+        keyboard.insert(InlineKeyboardButton(area, callback_data=f"area_{area}"))
     await Form.area.set()
-    await bot.send_message(
-        callback.from_user.id,
-        f"Which area in the {location}?\n\nDi kawasan manakah di {location}?",
-        reply_markup=keyboard)
+    await bot.send_message(callback.from_user.id, "Select the area:", reply_markup=keyboard)
 
-
-# === AREA ===
-@dp.callback_query_handler(lambda c: c.data.startswith("area_"),
-                           state=Form.area)
+@dp.callback_query_handler(lambda c: c.data.startswith("area_"), state=Form.area)
 async def process_area(callback: CallbackQuery, state: FSMContext):
     area = callback.data.split("_", 1)[1]
     await state.update_data(area=area)
     await callback.answer()
-
     keyboard = InlineKeyboardMarkup(row_width=3)
     for level in ["Low", "Medium", "High"]:
-        keyboard.insert(
-            InlineKeyboardButton(level, callback_data=f"sev_{level}"))
-
+        keyboard.insert(InlineKeyboardButton(level, callback_data=f"sev_{level}"))
     await Form.severity.set()
-    await bot.send_message(callback.from_user.id,
-                           "Select severity level:\n\nPilih tahap keseriusan:",
-                           reply_markup=keyboard)
+    await bot.send_message(callback.from_user.id, "Select severity:", reply_markup=keyboard)
 
-
-# === SEVERITY ===
-@dp.callback_query_handler(lambda c: c.data.startswith("sev_"),
-                           state=Form.severity)
+@dp.callback_query_handler(lambda c: c.data.startswith("sev_"), state=Form.severity)
 async def process_severity(callback: CallbackQuery, state: FSMContext):
     severity = callback.data.split("_", 1)[1]
     await state.update_data(severity=severity)
     await callback.answer()
-
     await Form.description.set()
-    await bot.send_message(
-        callback.from_user.id,
-        "Describe what happened:\n\nTerangkan apa yang berlaku:",
-        reply_markup=cancel_keyboard)
+    await bot.send_message(callback.from_user.id, "Describe what happened:", reply_markup=cancel_keyboard)
 
-
-# === DESCRIPTION ===
 @dp.message_handler(state=Form.description)
 async def process_description(message: types.Message, state: FSMContext):
     await state.update_data(description=message.text)
     await Form.photo.set()
-    await message.answer(
-        "You may now send a photo or short video (or type 'skip'):\n\nAnda boleh menghantar gambar atau video pendek (atau taip 'skip')",
-        reply_markup=cancel_keyboard)
+    await message.answer("Send a photo or type 'skip':", reply_markup=cancel_keyboard)
 
-
-# === SKIP PHOTO ===
 @dp.message_handler(lambda m: m.text.lower() == 'skip', state=Form.photo)
 async def skip_photo(message: types.Message, state: FSMContext):
     await save_data(message, state, photo_url="")
 
-
-# === PHOTO OR VIDEO ===
-@dp.message_handler(content_types=[ContentType.PHOTO, ContentType.VIDEO],
-                    state=Form.photo)
+@dp.message_handler(content_types=[ContentType.PHOTO, ContentType.VIDEO], state=Form.photo)
 async def process_media(message: types.Message, state: FSMContext):
-    file_id = message.photo[
-        -1].file_id if message.photo else message.video.file_id
+    file_id = message.photo[-1].file_id if message.photo else message.video.file_id
     file = await bot.get_file(file_id)
     file_path = file.file_path
-    media_url = f"https://api.telegram.org/file/bot{API_TOKEN}/{file_path}"
+    media_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
     await save_data(message, state, media_url)
 
-
-# === SAVE DATA TO GOOGLE SHEETS ===
 async def save_data(message: types.Message, state: FSMContext, photo_url):
     data = await state.get_data()
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
     sheet.append_row([
-        timestamp,
+        datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         data.get('name'),
         data.get('location'),
         data.get('area'),
         data.get('severity'),
-        data.get('description'), photo_url, message.from_user.id
+        data.get('description'),
+        photo_url,
+        message.from_user.id
     ])
-
-    await message.answer(
-        "✅ Report saved. Tap /report to send another.\n\n✅ Laporan disimpan. Tekan /report untuk menghantar lagi.",
-        reply_markup=report_keyboard)
+    await message.answer("✅ Report saved. Tap /report to send another.", reply_markup=report_keyboard)
     await state.finish()
 
+@dp.message_handler(commands='cancel', state='*')
+async def cancel_handler(message: types.Message, state: FSMContext):
+    if await state.get_state():
+        await state.finish()
+        await message.answer("❌ Report cancelled.", reply_markup=ReplyKeyboardRemove())
 
-# === FALLBACK FOR RANDOM TEXT DURING CALLBACKS ===
-@dp.message_handler(state='*', content_types=types.ContentTypes.TEXT)
-async def unknown_text(message: types.Message, state: FSMContext):
-    await message.reply("⚠️ Please use the buttons or type /cancel to stop.",
-                        reply_markup=cancel_keyboard)
+# === FLASK ROUTE TO RECEIVE UPDATES ===
+@app.route(WEBHOOK_PATH, methods=['POST'])
+async def webhook():
+    update = types.Update(**request.json)
+    await dp.process_update(update)
+    return 'ok', 200
 
+# === SETUP WEBHOOK ON START ===
+async def on_startup(dp):
+    await bot.set_webhook(WEBHOOK_URL)
 
-# === START POLLING ===
-def start_bot():
-    executor.start_polling(dp, skip_updates=True)
+async def on_shutdown(dp):
+    await bot.delete_webhook()
 
+# === RUN WEBHOOK SERVER ===
 if __name__ == '__main__':
-    start_bot()
+    logging.basicConfig(level=logging.INFO)
+    start_webhook(
+        dispatcher=dp,
+        webhook_path=WEBHOOK_PATH,
+        on_startup=on_startup,
+        on_shutdown=on_shutdown,
+        skip_updates=True,
+        host=APP_HOST,
+        port=APP_PORT,
+        web_app=app
+    )
