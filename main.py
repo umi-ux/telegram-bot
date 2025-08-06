@@ -153,21 +153,18 @@ async def on_shutdown(dp):
     await bot.delete_webhook()
 
 # === MAIN ===
+async def on_startup_app(app):
+    await on_startup(dp)
+
+async def on_cleanup_app(app):
+    await on_shutdown(dp)
+
 def main():
+    logging.basicConfig(level=logging.INFO)
+
     app = web.Application()
     app.router.add_post(WEBHOOK_PATH, handle_webhook)
+    app.on_startup.append(on_startup_app)
+    app.on_cleanup.append(on_cleanup_app)
 
-    logging.basicConfig(level=logging.INFO)
-    start_webhook(
-        dispatcher=dp,
-        webhook_path=WEBHOOK_PATH,
-        on_startup=on_startup,
-        on_shutdown=on_shutdown,
-        skip_updates=True,
-        host=APP_HOST,
-        port=APP_PORT,
-        web_app=app
-    )
-
-if __name__ == '__main__':
-    main()
+    web.run_app(app, host=APP_HOST, port=APP_PORT)
