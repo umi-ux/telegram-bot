@@ -1,47 +1,40 @@
 import logging
 import os
 import json
-from flask import Flask, request
 from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram.utils.executor import start_webhook
 
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 from dotenv import load_dotenv
-from threading import Thread
 
-# === LOAD ENV ===
+# Load environment variables
 load_dotenv()
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-# === GSPREAD SETUP ===
-SCOPE = [
-    'https://spreadsheets.google.com/feeds',
-    'https://www.googleapis.com/auth/drive'
-]
-creds_json = os.getenv("GOOGLE_CREDS_JSON")
-creds_dict = json.loads(creds_json)
+# Gspread setup
+SCOPE = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+creds_dict = json.loads(os.getenv("GOOGLE_CREDS_JSON"))
 CREDS = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
 gc = gspread.authorize(CREDS)
 sheet = gc.open('Near Miss Reports').worksheet('Reports')
 
-# === BOT & WEBHOOK SETUP ===
+# Bot and dispatcher
 bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
+# Webhook config
 WEBHOOK_PATH = '/webhook'
-APP_HOST = '0.0.0.0'
-APP_PORT = int(os.environ.get('PORT', 10000))
+WEBAPP_HOST = '0.0.0.0'
+WEBAPP_PORT = int(os.environ.get('PORT', 10000))
 
-app = Flask(__name__)
-
-# === STATE MACHINE ===
+# States
 class Form(StatesGroup):
     name = State()
     location = State()
@@ -50,13 +43,12 @@ class Form(StatesGroup):
     description = State()
     photo = State()
 
-# === KEYBOARDS ===
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton, ContentType, CallbackQuery
 
 cancel_keyboard = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton("/cancel"))
 report_keyboard = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton("/report"))
 
-# === HANDLERS ===
+# Handlers
 @dp.message_handler(commands='start')
 async def start(message: types.Message):
     await message.answer("Hi! Use /report to file a near miss report.", reply_markup=report_keyboard)
@@ -148,39 +140,22 @@ async def cancel_handler(message: types.Message, state: FSMContext):
         await state.finish()
         await message.answer("❌ Report cancelled.", reply_markup=ReplyKeyboardRemove())
 
-# === FLASK ROUTE TO RECEIVE UPDATES ===
-@app.route(WEBHOOK_PATH, methods=['POST'])
-def webhook():
-    update = types.Update(**request.json)
-
-    async def handle_update():
-        await dp.process_update(update)
-
-    asyncio.run(handle_update())  # ✅ cleanly creates + runs loop
-
-    return 'ok', 200
-
-
-# === WEBHOOK SETUP ===
+# Webhook startup/shutdown
 async def on_startup(dp):
-    await bot.set_webhook(WEBHOOK_URL + WEBHOOK_PATH)
+    await bot.set_webhook(WEBHOOK_URL)
 
 async def on_shutdown(dp):
     await bot.delete_webhook()
 
-# === MAIN ===
+# Main run
 if __name__ == '__main__':
-    import asyncio
-
     logging.basicConfig(level=logging.INFO)
-
-    # Start Flask in a separate thread
-    def run_flask():
-        app.run(host=APP_HOST, port=APP_PORT)
-
-    flask_thread = Thread(target=run_flask)
-    flask_thread.start()
-
-    # Start webhook setup
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(on_startup(dp))
+    start_webhook(
+        dispatcher=dp,
+        webhook_path=WEBHOOK_PATH,
+        on_startup=on_startup,
+        on_shutdown=on_shutdown,
+        skip_updates=True,
+        host=WEBAPP_HOST,
+        port=WEBAPP_PORT,
+    )
