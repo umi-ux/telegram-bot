@@ -6,7 +6,6 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton, ContentType, CallbackQuery
-from aiogram.utils.executor import start_webhook
 from aiohttp import web
 from datetime import datetime
 import gspread
@@ -54,7 +53,7 @@ async def start(message: types.Message):
 
 @dp.message_handler(commands='report')
 async def report(message: types.Message):
-    await Form.name.set()
+    await dp.current_state(user=message.from_user.id).set_state(Form.name.state)
     await message.answer("What is your name?\n(You can cancel anytime with /cancel)", reply_markup=cancel_keyboard)
 
 @dp.message_handler(state=Form.name)
@@ -63,7 +62,7 @@ async def process_name(message: types.Message, state: FSMContext):
     keyboard = InlineKeyboardMarkup(row_width=2)
     for loc in ["Simpang Renggam", "U1 Office"]:
         keyboard.insert(InlineKeyboardButton(loc, callback_data=f"loc_{loc}"))
-    await Form.location.set()
+    await dp.current_state(user=message.from_user.id).set_state(Form.location.state)
     await message.answer("Select the incident location:", reply_markup=keyboard)
 
 @dp.callback_query_handler(lambda c: c.data.startswith("loc_"), state=Form.location)
@@ -78,7 +77,7 @@ async def process_location(callback: CallbackQuery, state: FSMContext):
     keyboard = InlineKeyboardMarkup(row_width=2)
     for area in area_options.get(location, ["General Area"]):
         keyboard.insert(InlineKeyboardButton(area, callback_data=f"area_{area}"))
-    await Form.area.set()
+    await dp.current_state(user=callback.from_user.id).set_state(Form.area.state)
     await bot.send_message(callback.from_user.id, "Select the area:", reply_markup=keyboard)
 
 @dp.callback_query_handler(lambda c: c.data.startswith("area_"), state=Form.area)
@@ -89,7 +88,7 @@ async def process_area(callback: CallbackQuery, state: FSMContext):
     keyboard = InlineKeyboardMarkup(row_width=3)
     for level in ["Low", "Medium", "High"]:
         keyboard.insert(InlineKeyboardButton(level, callback_data=f"sev_{level}"))
-    await Form.severity.set()
+    await dp.current_state(user=callback.from_user.id).set_state(Form.severity.state)
     await bot.send_message(callback.from_user.id, "Select severity:", reply_markup=keyboard)
 
 @dp.callback_query_handler(lambda c: c.data.startswith("sev_"), state=Form.severity)
@@ -97,13 +96,13 @@ async def process_severity(callback: CallbackQuery, state: FSMContext):
     severity = callback.data.split("_", 1)[1]
     await state.update_data(severity=severity)
     await callback.answer()
-    await Form.description.set()
+    await dp.current_state(user=callback.from_user.id).set_state(Form.description.state)
     await bot.send_message(callback.from_user.id, "Describe what happened:", reply_markup=cancel_keyboard)
 
 @dp.message_handler(state=Form.description)
 async def process_description(message: types.Message, state: FSMContext):
     await state.update_data(description=message.text)
-    await Form.photo.set()
+    await dp.current_state(user=message.from_user.id).set_state(Form.photo.state)
     await message.answer("Send a photo or type 'skip':", reply_markup=cancel_keyboard)
 
 @dp.message_handler(lambda m: m.text.lower() == 'skip', state=Form.photo)
@@ -146,13 +145,6 @@ async def handle_webhook(request):
     await dp.process_update(update)
     return web.Response()
 
-async def on_startup(dp):
-    await bot.set_webhook(WEBHOOK_URL)
-
-async def on_shutdown(dp):
-    await bot.delete_webhook()
-
-# === MAIN ===
 async def on_startup_app(app):
     await bot.set_webhook(WEBHOOK_URL)
     logging.info("🚀 Webhook set and bot started")
@@ -174,8 +166,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-    app.on_startup.append(on_startup_app)
-    app.on_cleanup.append(on_cleanup_app)
-
-    web.run_app(app, host=APP_HOST, port=APP_PORT)
