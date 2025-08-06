@@ -47,16 +47,19 @@ cancel_keyboard = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton("
 report_keyboard = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton("/report"))
 
 # === HANDLERS ===
+# === Start ===
 @dp.message_handler(commands='start')
 async def start(message: types.Message, state: FSMContext):
     await state.finish()  # Cancel any ongoing form/report
     await message.answer("Hi! Use /report to file a near miss report.\n\nHi! Tekan /report untuk membuat laporan.", reply_markup=report_keyboard)
 
+# === Report Start ===
 @dp.message_handler(commands='report')
 async def report(message: types.Message):
     await dp.current_state(user=message.from_user.id).set_state(Form.name.state)
-    await message.answer("What is your name?\n(You can cancel anytime with /cancel)\n\nNama anda?\n(Anda boleh batalkan bila-bila masa dengan /cancel)", reply_markup=keyboard)
+    await message.answer("What is your name?\n(You can cancel anytime with /cancel)\n\nNama anda?\n(Anda boleh batalkan bila-bila masa dengan /cancel)", reply_markup=cancel_keyboard)
 
+# === Name ===
 @dp.message_handler(state=Form.name)
 async def process_name(message: types.Message, state: FSMContext):
     await state.update_data(name=message.text)
@@ -66,6 +69,7 @@ async def process_name(message: types.Message, state: FSMContext):
     await dp.current_state(user=message.from_user.id).set_state(Form.location.state)
     await message.answer("Select the incident location:\n\nPilih lokasi insiden:", reply_markup=keyboard)
 
+# === Location ===
 @dp.callback_query_handler(lambda c: c.data.startswith("loc_"), state=Form.location)
 async def process_location(callback: CallbackQuery, state: FSMContext):
     location = callback.data.split("_", 1)[1]
@@ -81,6 +85,7 @@ async def process_location(callback: CallbackQuery, state: FSMContext):
     await dp.current_state(user=callback.from_user.id).set_state(Form.area.state)
     await bot.send_message(callback.from_user.id, "Select the area:\n\nPilih kawasan kejadian:", reply_markup=keyboard)
 
+# === Area ===
 @dp.callback_query_handler(lambda c: c.data.startswith("area_"), state=Form.area)
 async def process_area(callback: CallbackQuery, state: FSMContext):
     area = callback.data.split("_", 1)[1]
@@ -92,24 +97,28 @@ async def process_area(callback: CallbackQuery, state: FSMContext):
     await dp.current_state(user=callback.from_user.id).set_state(Form.severity.state)
     await bot.send_message(callback.from_user.id, "Select severity level:\n\nPilih tahap keseriusan:", reply_markup=keyboard)
 
+# === Severity ===
 @dp.callback_query_handler(lambda c: c.data.startswith("sev_"), state=Form.severity)
 async def process_severity(callback: CallbackQuery, state: FSMContext):
     severity = callback.data.split("_", 1)[1]
     await state.update_data(severity=severity)
     await callback.answer()
     await dp.current_state(user=callback.from_user.id).set_state(Form.description.state)
-    await bot.send_message(callback.from_user.id, "Describe what happened:\n\nTerangkan apa yang berlaku:", reply_markup=keyboard)
+    await bot.send_message(callback.from_user.id, "Describe what happened:\n\nTerangkan apa yang berlaku:", reply_markup=cancel_keyboard)
 
+# === Description  ===
 @dp.message_handler(state=Form.description)
 async def process_description(message: types.Message, state: FSMContext):
     await state.update_data(description=message.text)
     await dp.current_state(user=message.from_user.id).set_state(Form.photo.state)
     await message.answer("Send a photo or short video (or type 'skip'):\n\nHantar gambar atau video pendek (atau taip 'skip'):", reply_markup=cancel_keyboard)
 
+# === Skip Photo  ===
 @dp.message_handler(lambda m: m.text.lower() == 'skip', state=Form.photo)
 async def skip_photo(message: types.Message, state: FSMContext):
     await save_data(message, state, photo_url="")
 
+# === Photo or Video  ===
 @dp.message_handler(content_types=[ContentType.PHOTO, ContentType.VIDEO], state=Form.photo)
 async def process_media(message: types.Message, state: FSMContext):
     file_id = message.photo[-1].file_id if message.photo else message.video.file_id
@@ -118,6 +127,7 @@ async def process_media(message: types.Message, state: FSMContext):
     media_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
     await save_data(message, state, media_url)
 
+# === SAVE DATA TO GOOGLE SHEETS ===
 async def save_data(message: types.Message, state: FSMContext, photo_url):
     data = await state.get_data()
     sheet.append_row([
@@ -133,7 +143,6 @@ async def save_data(message: types.Message, state: FSMContext, photo_url):
     await message.answer("✅ Report saved. Tap /report to send another.\n\n✅Laporan disimpan. Tekan /report untuk menghantar lagi.", reply_markup=report_keyboard)
     await state.finish()
 
-# === CANCEL HANDLER ===
 # === CANCEL HANDLER ===
 @dp.message_handler(commands='cancel', state='*')
 async def cancel_handler(message: types.Message, state: FSMContext):
