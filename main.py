@@ -154,16 +154,27 @@ async def on_shutdown(dp):
 
 # === MAIN ===
 async def on_startup_app(app):
-    await on_startup(dp)
+    await bot.set_webhook(WEBHOOK_URL)
+    logging.info("🚀 Webhook set and bot started")
 
 async def on_cleanup_app(app):
-    await on_shutdown(dp)
+    await bot.delete_webhook()
+    logging.info("🧹 Webhook deleted on shutdown")
 
 def main():
     logging.basicConfig(level=logging.INFO)
 
     app = web.Application()
     app.router.add_post(WEBHOOK_PATH, handle_webhook)
+    app.on_startup.append(on_startup_app)
+    app.on_cleanup.append(on_cleanup_app)
+
+    logging.info(f"🌐 Starting app on {APP_HOST}:{APP_PORT}")
+    web.run_app(app, host=APP_HOST, port=APP_PORT)
+
+if __name__ == '__main__':
+    main()
+
     app.on_startup.append(on_startup_app)
     app.on_cleanup.append(on_cleanup_app)
 
