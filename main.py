@@ -134,17 +134,15 @@ async def save_data(message: types.Message, state: FSMContext, photo_url):
     await state.finish()
 
 # === CANCEL HANDLER ===
-@dp.message_handler(commands='cancel', state='*')
-async def cancel_handler(message: types.Message, state: FSMContext):
+@dp.message_handler(commands='cancel')
+async def cancel_handler(message: types.Message):
+    state = dp.current_state(user=message.from_user.id)
     current = await state.get_state()
     if current:
         await state.finish()
-        await message.answer(
-            "❌ Report cancelled. You can start again anytime with /report.\n\n❌Laporan dibatalkan. Anda boleh mulakan laporan lagi menggunakan /report.",
-            reply_markup=ReplyKeyboardRemove())
+        await message.answer("❌ Report cancelled.\n\n❌ Laporan dibatalkan.", reply_markup=report_keyboard)
     else:
-        await message.answer("⚠️ No active report to cancel.",
-                             reply_markup=ReplyKeyboardRemove())
+        await message.answer("No ongoing report.\n\nTiada laporan sedang dibuat.", reply_markup=report_keyboard)
 
 # === AIOHTTP WEBHOOK ===
 async def handle_webhook(request):
