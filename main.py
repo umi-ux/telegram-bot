@@ -49,12 +49,12 @@ report_keyboard = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton("
 # === HANDLERS ===
 @dp.message_handler(commands='start')
 async def start(message: types.Message):
-    await message.answer("Hi! Use /report to file a near miss report.", reply_markup=report_keyboard)
+    await message.answer("Hi! Use /report to file a near miss report.\n\nHi! Tekan /report untuk membuat laporan.", reply_markup=report_keyboard)
 
 @dp.message_handler(commands='report')
 async def report(message: types.Message):
     await dp.current_state(user=message.from_user.id).set_state(Form.name.state)
-    await message.answer("What is your name?\n(You can cancel anytime with /cancel)", reply_markup=cancel_keyboard)
+    await message.answer("What is your name?\n(You can cancel anytime with /cancel)\n\nNama anda?\n(Anda boleh batalkan bila-bila masa dengan /cancel)", reply_markup=cancel_keyboard)
 
 @dp.message_handler(state=Form.name)
 async def process_name(message: types.Message, state: FSMContext):
@@ -63,7 +63,7 @@ async def process_name(message: types.Message, state: FSMContext):
     for loc in ["Simpang Renggam", "U1 Office"]:
         keyboard.insert(InlineKeyboardButton(loc, callback_data=f"loc_{loc}"))
     await dp.current_state(user=message.from_user.id).set_state(Form.location.state)
-    await message.answer("Select the incident location:", reply_markup=keyboard)
+    await message.answer("Select the incident location:\n\nPilih lokasi insiden:", reply_markup=keyboard)
 
 @dp.callback_query_handler(lambda c: c.data.startswith("loc_"), state=Form.location)
 async def process_location(callback: CallbackQuery, state: FSMContext):
@@ -71,14 +71,14 @@ async def process_location(callback: CallbackQuery, state: FSMContext):
     await state.update_data(location=location)
     await callback.answer()
     area_options = {
-        "Simpang Renggam": ["Guard House", "Factory", "Office"],
-        "U1 Office": ["Office 1st Floor", "Office 2nd Floor", "Pantry"]
+        "Simpang Renggam": ["Guard House", "Factory Surrounding", "Car/Motorcycle Parking", "Office", "Toilet", "Prayer Room", "Canteen", "Warehouse (Material)", "Warehouse (Component)", "Cutting Section", "Blasting Section", "Deck Assembly", "Lip Assembly", "Frame Assembly", "Crane Fabrication", "Painting Section", "DL Assembly", "Laser Cleaning", "Loading Bay"],
+        "U1 Office": ["Guard House", "Building Surrounding", "Car/Motorcycle Parking", "Office 1st Floor", "Office 2nd Floor", "Toilet", "Prayer Room", "Pantry", "Warehouse (MHE)", "Warehouse (T&I)", "Training Room", "Ground Floor Office", "Stairs", "Meeting Room", "Discussion Room", "Privacy Room", "L2 Lobby"]
     }
     keyboard = InlineKeyboardMarkup(row_width=2)
     for area in area_options.get(location, ["General Area"]):
         keyboard.insert(InlineKeyboardButton(area, callback_data=f"area_{area}"))
     await dp.current_state(user=callback.from_user.id).set_state(Form.area.state)
-    await bot.send_message(callback.from_user.id, "Select the area:", reply_markup=keyboard)
+    await bot.send_message(callback.from_user.id, "Select the area:\n\nPilih kawasan kejadian:", reply_markup=keyboard)
 
 @dp.callback_query_handler(lambda c: c.data.startswith("area_"), state=Form.area)
 async def process_area(callback: CallbackQuery, state: FSMContext):
@@ -89,7 +89,7 @@ async def process_area(callback: CallbackQuery, state: FSMContext):
     for level in ["Low", "Medium", "High"]:
         keyboard.insert(InlineKeyboardButton(level, callback_data=f"sev_{level}"))
     await dp.current_state(user=callback.from_user.id).set_state(Form.severity.state)
-    await bot.send_message(callback.from_user.id, "Select severity:", reply_markup=keyboard)
+    await bot.send_message(callback.from_user.id, "Select severity level:\n\nPilih tahap keseriusan:", reply_markup=keyboard)
 
 @dp.callback_query_handler(lambda c: c.data.startswith("sev_"), state=Form.severity)
 async def process_severity(callback: CallbackQuery, state: FSMContext):
@@ -97,13 +97,13 @@ async def process_severity(callback: CallbackQuery, state: FSMContext):
     await state.update_data(severity=severity)
     await callback.answer()
     await dp.current_state(user=callback.from_user.id).set_state(Form.description.state)
-    await bot.send_message(callback.from_user.id, "Describe what happened:", reply_markup=cancel_keyboard)
+    await bot.send_message(callback.from_user.id, "Describe what happened:\n\nTerangkan apa yang berlaku:", reply_markup=cancel_keyboard)
 
 @dp.message_handler(state=Form.description)
 async def process_description(message: types.Message, state: FSMContext):
     await state.update_data(description=message.text)
     await dp.current_state(user=message.from_user.id).set_state(Form.photo.state)
-    await message.answer("Send a photo or type 'skip':", reply_markup=cancel_keyboard)
+    await message.answer("Send a photo or short video (or type 'skip'):\n\nHantar gambar atau video pendek (atau taip 'skip'):", reply_markup=cancel_keyboard)
 
 @dp.message_handler(lambda m: m.text.lower() == 'skip', state=Form.photo)
 async def skip_photo(message: types.Message, state: FSMContext):
@@ -129,14 +129,14 @@ async def save_data(message: types.Message, state: FSMContext, photo_url):
         photo_url,
         message.from_user.id
     ])
-    await message.answer("✅ Report saved. Tap /report to send another.", reply_markup=report_keyboard)
+    await message.answer("✅ Report saved. Tap /report to send another.\n\nLaporan disimpan. Tekan /report untuk menghantar lagi.", reply_markup=report_keyboard)
     await state.finish()
 
 @dp.message_handler(commands='cancel', state='*')
 async def cancel_handler(message: types.Message, state: FSMContext):
     if await state.get_state():
         await state.finish()
-        await message.answer("❌ Report cancelled.", reply_markup=ReplyKeyboardRemove())
+        await message.answer("❌ Report cancelled.\n\n❌ Laporan dibatalkan", reply_markup=ReplyKeyboardRemove())
 
 # === AIOHTTP WEBHOOK ===
 async def handle_webhook(request):
