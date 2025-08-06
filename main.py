@@ -142,6 +142,11 @@ async def cancel_handler(message: types.Message, state: FSMContext):
 async def handle_webhook(request):
     data = await request.json()
     update = types.Update.to_object(data)
+
+    # Fix: Set current bot and dispatcher context manually
+    bot.set_current(bot)
+    dp.set_current(dp)
+
     await dp.process_update(update)
     return web.Response()
 
