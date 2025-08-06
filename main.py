@@ -11,6 +11,7 @@ from datetime import datetime
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
+from datetime import datetime, timedelta
 
 # === LOAD ENV ===
 load_dotenv()
@@ -144,7 +145,7 @@ async def process_media(message: types.Message, state: FSMContext):
 async def save_data(message: types.Message, state: FSMContext, photo_url):
     data = await state.get_data()
     sheet.append_row([
-        datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        (datetime.utcnow() + timedelta(hours=8)).strftime('%Y-%m-%d %H:%M:%S'),
         data.get('name'),
         data.get('location'),
         data.get('area'),
