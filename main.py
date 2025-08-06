@@ -20,14 +20,17 @@ SCOPE = [
 ]
 import os
 import json
-from io import StringIO
 
 creds_json = os.environ.get("GOOGLE_CREDS_JSON")
 creds_dict = json.loads(creds_json)
 
+# 👇 THIS FIXES the private key formatting
+creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+
 CREDS = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
 gc = gspread.authorize(CREDS)
 sheet = gc.open('Near Miss Reports').worksheet('Reports')
+
 
 # === BOT SETUP ===
 logging.basicConfig(level=logging.INFO)
