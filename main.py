@@ -159,7 +159,7 @@ def webhook():
 
 # === WEBHOOK SETUP ===
 async def on_startup(dp):
-    await bot.set_webhook(WEBHOOK_URL)
+    await bot.set_webhook(WEBHOOK_URL + WEBHOOK_PATH)
 
 async def on_shutdown(dp):
     await bot.delete_webhook()
