@@ -18,7 +18,14 @@ SCOPE = [
     'https://spreadsheets.google.com/feeds',
     'https://www.googleapis.com/auth/drive'
 ]
-CREDS = ServiceAccountCredentials.from_json_keyfile_name('creds.json', SCOPE)
+import os
+import json
+from io import StringIO
+
+creds_json = os.environ.get("GOOGLE_CREDS_JSON")
+creds_dict = json.loads(creds_json)
+
+CREDS = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
 gc = gspread.authorize(CREDS)
 sheet = gc.open('Near Miss Reports').worksheet('Reports')
 
